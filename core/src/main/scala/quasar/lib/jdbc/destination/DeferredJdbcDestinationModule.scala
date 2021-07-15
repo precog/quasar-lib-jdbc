@@ -34,7 +34,7 @@ import doobie._
 import org.slf4s.{Logger, LoggerFactory}
 
 import quasar.api.destination.{DestinationError => DE}
-import quasar.connector.MonadResourceErr
+import quasar.connector.{MonadResourceErr, GetAuth}
 import quasar.connector.destination._
 
 abstract class DeferredJdbcDestinationModule[C: DecodeJson] extends DestinationModule {
@@ -47,6 +47,7 @@ abstract class DeferredJdbcDestinationModule[C: DecodeJson] extends DestinationM
       config: C,
       transactor: Resource[F, Transactor[F]],
       pushPull: PushmiPullyu[F],
+      getAuth: GetAuth[F],
       log: Logger)
       : Resource[F, Either[InitError, Destination[F]]]
 
@@ -54,7 +55,8 @@ abstract class DeferredJdbcDestinationModule[C: DecodeJson] extends DestinationM
 
   def destination[F[_]: ConcurrentEffect: ContextShift: MonadResourceErr: Timer](
       config: Json,
-      pushPull: PushmiPullyu[F])
+      pushPull: PushmiPullyu[F],
+      getAuth: GetAuth[F])
       : Resource[F, Either[InitError, Destination[F]]] = {
 
     val id = s"${destinationType.name.value}-v${destinationType.version}"
@@ -88,7 +90,7 @@ abstract class DeferredJdbcDestinationModule[C: DecodeJson] extends DestinationM
 
       slog <- liftF(Sync[F].delay(LoggerFactory(s"quasar.lib.$debugId")))
 
-      dest <- EitherT(jdbcDestination(cfg, ManagedTransactor[F](debugId, xaCfg), pushPull, slog))
+      dest <- EitherT(jdbcDestination(cfg, ManagedTransactor[F](debugId, xaCfg), pushPull, getAuth, slog))
 
       _ <- liftF(Sync[F].delay(slog.info(s"Initialized $debugId: ${sanitizeDestinationConfig(config)}")))
     } yield dest
