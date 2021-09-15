@@ -55,22 +55,37 @@ object RValueLoader {
       rvalueColumn: RValueColumn,
       offsetToFragment: Offset => Either[String, Fragment])
       : BatchLoader[Resource[ConnectionIO, ?], Args[I], Either[String, QueryResult[ConnectionIO]]] =
+    seekParameterized[I](
+      logHandler,
+      resultChunkSize,
+      rvalueColumn,
+      (off, table, schema) => offsetToFragment(off),
+      defaultDbObject,
+      (table, schema, fragment) => fragment)
+
+  def seekParameterized[I <: Hygienic](
+      logHandler: LogHandler,
+      resultChunkSize: Int,
+      rvalueColumn: RValueColumn,
+      offsetToFragment: (Offset, I, Option[I]) => Either[String, Fragment],
+      mkDbObject: (I, Option[I]) => Fragment,
+      reifyColumn: (I, Option[I], Fragment) => Fragment)
+      : BatchLoader[Resource[ConnectionIO, ?], Args[I], Either[String, QueryResult[ConnectionIO]]] =
     BatchLoader.Seek[Resource[ConnectionIO, ?], Args[I], Either[String, QueryResult[ConnectionIO]]] {
       (args, offset) => args match {
         case (table, schema, columns, stages) =>
-          val dbObject =
-            schema.fold(table.fr)(_.fr0 ++ fr0"." ++ table.fr)
+          val dbObject = mkDbObject(table, schema)
 
           val projections = Some(columns) collect {
             case ColumnSelection.Explicit(idents) =>
-              idents.map(_.fr0).intercalate(fr",")
+              idents.map(_.fr0).map(reifyColumn(table, schema, _)).intercalate(fr",")
 
             case ColumnSelection.All => fr0"*"
           }
 
           val offsetFragment = offset match {
             case None => Right(fr0"")
-            case Some(o) => offsetToFragment(o).map(fr"WHERE" ++ _)
+            case Some(o) => offsetToFragment(o, table, schema).map(fr"WHERE" ++ _)
           }
 
           val rvalues = projections match {
@@ -99,4 +114,7 @@ object RValueLoader {
 
           rvalues.map(_.map(rs => QueryResult.parsed(QDataRValue, ResultData.Continuous(rs), stages)))
       }}
+
+  def defaultDbObject[I <: Hygienic](table: I, schema: Option[I]): Fragment =
+    schema.fold(table.fr)(_.fr0 ++ fr0"." ++ table.fr)
 }
