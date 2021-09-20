@@ -88,6 +88,7 @@ final class JdbcDiscovery private (discoverableTableTypes: Option[ConnectionIO[N
 
   ////
 
+
   private type TableSelector = (String, String)
 
   // Characters considered pattern placeholders by `DatabaseMetaData#getTables`
@@ -182,12 +183,7 @@ final class JdbcDiscovery private (discoverableTableTypes: Option[ConnectionIO[N
     } yield ts.translate(λ[ResultSetIO ~> ConnectionIO](FC.embed(rs, _))))
   }
 
-  private def tableSelector(ref: SchemaName Ior TableName): ConnectionIO[TableSelector] = {
-    def escapeForSearch(escapeString: String, patternLiteral: String): String =
-      Wildcards.foldLeft(patternLiteral) {
-        case (lit, wc) => lit.replace(wc.toString, escapeString + wc)
-      }
-
+  private def tableSelector(ref: SchemaName Ior TableName): ConnectionIO[TableSelector] =
     HC.getMetaData(FDMD.getSearchStringEscape) map { escape =>
       ref match {
         // All tables in the schema
@@ -203,10 +199,21 @@ final class JdbcDiscovery private (discoverableTableTypes: Option[ConnectionIO[N
           (escapeForSearch(escape, schema.asString), escapeForSearch(escape, table.asString))
       }
     }
+
+  private def escapeForSearch(escapeString: String, patternLiteral: String): String = {
+    val indexed = (Wildcards.map(_.toString) + escapeString).zipWithIndex
+    val marked = indexed.foldLeft(patternLiteral) { (lit, wc) =>
+      lit.replace(wc._1, JdbcDiscovery.UniqueMark + wc._2.toString)
+    }
+    indexed.foldLeft(marked) { (lit, wc) =>
+      lit.replace(JdbcDiscovery.UniqueMark + wc._2.toString, escapeString + wc._1)
+    }
   }
 }
 
 object JdbcDiscovery {
+  val UniqueMark = "ad0fe069-0fff-43f0-b29f-71fef175ad51"
+
   final case class TableMeta(
       table: TableName,
       schema: Option[SchemaName],
