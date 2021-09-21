@@ -32,7 +32,7 @@ import cats.implicits._
 import doobie._
 import doobie.implicits._
 
-import fs2.{Pull, Stream}
+import fs2.Stream
 
 import quasar.api.resource.{ResourceName, ResourcePath, ResourcePathType => RPT}
 import quasar.api.datasource.DatasourceType
@@ -79,23 +79,19 @@ final class JdbcDatasource[F[_]: Bracket[?[_], Throwable]: Defer] private (
           }
 
         case Left(ident) =>
-          def paths =
-            discovery.tables(Ior.left(ident))
-              .map(m => (ResourceName(m.table.asString), RPT.leafResource))
-              .pull.peek1
-              .flatMap(t => Pull.output1(t.map(_._2)))
-              .stream
-
           for {
             c <- xa.strategicConnection
 
             isTable <- Resource.eval(xa.runWith(c).apply(discovery.tableExists(ident, None)))
 
-            opt <- if (isTable)
-              Resource.pure[F, Option[Out[ConnectionIO]]](Some(Stream.empty))
-            else
-              paths.compile.resource.lastOrError.mapK(xa.runWith(c))
-          } yield opt.map(_.translate(xa.runWith(c)))
+          } yield if (isTable) {
+            (Stream.empty: Out[F]).some
+          } else {
+            discovery.tables(Ior.left(ident))
+              .map(m => (ResourceName(m.table.asString), RPT.leafResource))
+              .translate(xa.runWith(c))
+              .some
+          }
       }
   }
 }
