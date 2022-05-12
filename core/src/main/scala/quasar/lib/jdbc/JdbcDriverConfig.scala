@@ -39,9 +39,12 @@ object JdbcDriverConfig {
     * @param driverClassName the fully-qualified class name of the JDBC driver. This
     *                        is usually automatically determined by the `connectionUrl`,
     *                        so only provide it if necessary.
+    * @param connectionTestQuery to set connection test query, usually is not needed.
+    *                            Works only on pooled connections.
     */
   final case class JdbcDriverManagerConfig(
       connectionUrl: URI,
-      driverClassName: Option[String])
+      driverClassName: Option[String],
+      connectionTestQuery: Option[String] = None)
       extends JdbcDriverConfig
 }

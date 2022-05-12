@@ -36,7 +36,7 @@ object ManagedTransactor {
   def apply[F[_]: Async: ContextShift](
       name: String,
       config: TransactorConfig)
-      : Resource[F, Transactor[F]] = 
+      : Resource[F, Transactor[F]] =
     config.poolConfig match {
       case None => notPooled[F](name, config.driverConfig)
       case Some(pc) => pooled[F](name, config.driverConfig, pc)
@@ -51,7 +51,7 @@ object ManagedTransactor {
       case JdbcDataSourceConfig(className, props) =>
         Resource.eval(Async[F].raiseError(new IllegalArgumentException("JdbcDataSourceConfig is not supported")))
 
-      case JdbcDriverManagerConfig(url, driverClassName) => 
+      case JdbcDriverManagerConfig(url, driverClassName, _) =>
         for {
           transacting <- transactPool[F](s"$name.transact")
 
@@ -64,7 +64,7 @@ object ManagedTransactor {
             s"${url.getScheme}:${url.getSchemeSpecificPart}",
             transacting
           )
-        } yield xa        
+        } yield xa
     }
   }
 
@@ -86,9 +86,10 @@ object ManagedTransactor {
           c.setDataSourceClassName(className)
           props.foreach { case (k, v) => c.addDataSourceProperty(k, v) }
 
-        case JdbcDriverManagerConfig(url, className) =>
+        case JdbcDriverManagerConfig(url, className, connTestQuery) =>
           c.setJdbcUrl(s"${url.getScheme}:${url.getSchemeSpecificPart}")
           className.foreach(c.setDriverClassName)
+          connTestQuery.foreach(c.setConnectionTestQuery)
       }
 
       c.setMaximumPoolSize(poolConfig.connectionMaxConcurrency)
